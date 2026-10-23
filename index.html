@@ -1,0 +1,1727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blue Star Chiller Line — Material Feeder & Availability Tracker</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- SheetJS for multi-format Excel & CSV reading -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    .font-mono-num { font-feature-settings: "tnum"; font-variant-numeric: tabular-nums; }
+    .pulse-shortage { animation: pulseShortage 1.6s infinite ease-in-out; }
+    @keyframes pulseShortage {
+      0%, 100% { background-color: #fee2e2; }
+      50% { background-color: #fca5a5; }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased min-h-screen flex flex-col font-sans">
+
+  <!-- ==================== LOGIN MODAL ==================== -->
+  <div id="loginModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
+    <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+      <div class="bg-[#005A9C] p-6 text-white text-center">
+        <div class="inline-flex p-3 bg-white/10 rounded-xl mb-3">
+          <i data-lucide="shield-lock" class="w-8 h-8 text-white"></i>
+        </div>
+        <h2 class="text-2xl font-bold tracking-tight">Blue Star Chiller Line</h2>
+        <p class="text-blue-100 text-sm mt-1">Authorized Material Feeder Portal</p>
+      </div>
+
+      <div class="p-6 space-y-4">
+        <div id="loginError" class="hidden p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg font-medium"></div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">User Login ID</label>
+          <div class="relative">
+            <i data-lucide="user" class="w-4 h-4 text-slate-400 absolute left-3 top-3"></i>
+            <input type="text" id="loginUserId" value="admin" placeholder="Enter ID"
+                   class="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-[#005A9C] focus:outline-none" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Password</label>
+          <div class="relative">
+            <i data-lucide="key" class="w-4 h-4 text-slate-400 absolute left-3 top-3"></i>
+            <input type="password" id="loginPassword" value="admin123" placeholder="Enter password"
+                   class="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-[#005A9C] focus:outline-none" />
+          </div>
+        </div>
+
+        <button onclick="handleLogin()"
+                class="w-full py-2.5 bg-[#005A9C] hover:bg-blue-800 text-white font-semibold rounded-lg text-sm shadow transition flex items-center justify-center gap-2">
+          <i data-lucide="log-in" class="w-4 h-4"></i> Secure Login
+        </button>
+
+        <div class="text-xs text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-200">
+          <p class="font-bold text-slate-700 mb-1">Initial Login:</p>
+          <div class="flex justify-between items-center">
+            <span>User ID: <strong class="text-blue-900">admin</strong></span>
+            <span>Password: <code class="bg-slate-200 px-1.5 py-0.5 rounded font-bold">admin123</code></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== HEADER ==================== -->
+  <header class="bg-[#005A9C] text-white shadow-md sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="bg-white/10 p-2 rounded-lg">
+          <i data-lucide="cpu" class="w-6 h-6 text-white"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight leading-none">BLUE STAR</h1>
+          <p class="text-xs text-blue-200 font-medium">Screw Chiller Line — Material Feeder & Availability Tracker</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2.5">
+        <button onclick="openPlanViewerModal()" class="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition">
+          <i data-lucide="calendar-days" class="w-4 h-4"></i> View Plan Sequence
+          <span id="headerPlanCountBadge" class="ml-0.5 px-1.5 py-0.2 bg-white/20 text-white rounded-full font-bold text-[10px]">0</span>
+        </button>
+
+        <button onclick="openAuditLogModal()" class="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg text-xs font-semibold shadow-sm transition">
+          <i data-lucide="history" class="w-4 h-4"></i> Shift Audit Log
+          <span id="auditCountBadge" class="ml-0.5 px-1.5 py-0.2 bg-amber-400 text-slate-900 rounded-full font-bold text-[10px]">0</span>
+        </button>
+
+        <div id="currentUserBadge" class="hidden sm:flex items-center gap-2 bg-white/15 px-3 py-1.5 rounded-lg border border-white/20 text-xs">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>User: <strong id="headerUserId">admin</strong></span>
+          <span id="headerRoleBadge" class="px-1.5 py-0.5 bg-amber-400 text-slate-900 font-bold rounded text-[10px]">ADMIN</span>
+        </div>
+
+        <button id="adminUsersBtn" onclick="toggleUserManager(true)" class="hidden items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg text-xs font-semibold">
+          <i data-lucide="users" class="w-4 h-4"></i> Manage Logins
+        </button>
+
+        <button onclick="handleLogout()" class="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold">
+          <i data-lucide="log-out" class="w-4 h-4"></i> Logout
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================== MAIN DASHBOARD ==================== -->
+  <main id="appContent" class="max-w-7xl mx-auto px-4 py-6 w-full flex-1 space-y-6">
+
+    <div id="helperNoticeBanner" class="hidden bg-blue-50 border-l-4 border-blue-600 p-3 rounded-r-lg shadow-sm">
+      <div class="flex items-center gap-2">
+        <i data-lucide="info" class="w-5 h-5 text-blue-600"></i>
+        <p class="text-xs text-blue-900 font-medium">
+          <strong>Store Helper Access:</strong> Select models, check off parts as you stage them onto trolleys, and update <strong>Physical Stock (Floor Count)</strong>.
+        </p>
+      </div>
+    </div>
+
+    <div id="viewerNoticeBanner" class="hidden bg-purple-50 border-l-4 border-purple-600 p-3 rounded-r-lg shadow-sm">
+      <div class="flex items-center gap-2">
+        <i data-lucide="eye" class="w-5 h-5 text-purple-600"></i>
+        <p class="text-xs text-purple-900 font-medium">
+          <strong>Viewer / Auditor Mode:</strong> Read-only access enabled. Staging progress and stock inputs are locked to view-only.
+        </p>
+      </div>
+    </div>
+
+    <!-- ==================== STEP 1: UPLOADS ==================== -->
+    <section id="adminUploadSection" class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100">
+        <div class="flex items-center gap-2">
+          <span class="w-6 h-6 rounded-full bg-[#005A9C] text-white flex items-center justify-center text-xs font-bold">1</span>
+          <h2 class="text-base font-bold text-slate-800">Master Uploads & Alt BOM Mapping (Admin Only)</h2>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="openPlanViewerModal()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-semibold flex items-center gap-1.5 shadow-sm">
+            <i data-lucide="list-ordered" class="w-3.5 h-3.5"></i> View Full Plan Sequence
+          </button>
+          <button onclick="openSingleBomModal()" class="px-3 py-1.5 bg-blue-700 hover:bg-blue-800 text-white rounded-md text-xs font-semibold flex items-center gap-1.5 shadow-sm">
+            <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i> + Single Model Alt-BOM Upload
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- 1. Bulk BOM Dump -->
+        <div class="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center hover:border-blue-400 bg-slate-50 transition">
+          <i data-lucide="file-spreadsheet" class="w-8 h-8 mx-auto text-[#005A9C] mb-2"></i>
+          <h3 class="text-xs font-bold text-slate-700 uppercase">1. Bulk SAP BOM Dump (`dump.xlsx`)</h3>
+          <p class="text-[11px] text-slate-500 mb-1" id="bomStatus">Ready for dump.xlsx</p>
+          <p class="text-[10px] text-slate-400 mb-3 italic">Separates models strictly by <strong>Material + Alt Bom No.</strong></p>
+          <label class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#005A9C] hover:bg-blue-800 text-white rounded-md text-xs font-semibold">
+            <i data-lucide="upload" class="w-3.5 h-3.5"></i> Upload Full Dump
+            <input type="file" id="bomFileInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleBomUpload(event)" />
+          </label>
+        </div>
+
+        <!-- 2. Monthly Plan -->
+        <div class="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center hover:border-blue-400 bg-slate-50 transition">
+          <i data-lucide="calendar" class="w-8 h-8 mx-auto text-emerald-600 mb-2"></i>
+          <h3 class="text-xs font-bold text-slate-700 uppercase">2. Monthly Plan (`NOV R-1.xlsx`)</h3>
+          <p class="text-[11px] text-slate-500 mb-1" id="planStatus">Ready for NOV R-1.xlsx</p>
+          <p class="text-[10px] text-slate-400 mb-3 italic">Reads <strong>MODEL</strong> + <strong>BOM (Alt BOM)</strong> sequence directly</p>
+          <label class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-semibold">
+            <i data-lucide="upload" class="w-3.5 h-3.5"></i> Upload Plan
+            <input type="file" id="planFileInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="handlePlanUpload(event)" />
+          </label>
+        </div>
+
+        <!-- 3. ERP System Stock -->
+        <div class="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center hover:border-blue-400 bg-slate-50 transition">
+          <i data-lucide="boxes" class="w-8 h-8 mx-auto text-amber-600 mb-2"></i>
+          <h3 class="text-xs font-bold text-slate-700 uppercase">3. ERP Stock Dump (Optional)</h3>
+          <p class="text-[11px] text-slate-500 mb-1" id="stockStatus">Stock sync ready</p>
+          <p class="text-[10px] text-slate-400 mb-3 italic">Syncs unrestricted SAP ERP system stock</p>
+          <label class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-md text-xs font-semibold">
+            <i data-lucide="upload" class="w-3.5 h-3.5"></i> Upload Stock
+            <input type="file" id="stockFileInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleStockUpload(event)" />
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== STEP 2: JOB & MODEL SELECTOR ==================== -->
+    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+      <div class="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100">
+        <div class="flex items-center gap-2">
+          <span class="w-6 h-6 rounded-full bg-[#005A9C] text-white flex items-center justify-center text-xs font-bold">2</span>
+          <h2 class="text-base font-bold text-slate-800">Select Chiller Model & Verified Alt BOM</h2>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="openPlanViewerModal()" class="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1">
+            <i data-lucide="eye" class="w-3.5 h-3.5"></i> View Sequence Sheet
+          </button>
+          <div class="relative w-full max-w-xs">
+            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+            <input type="text" id="modelFilterInput" oninput="filterDropdownOptions()" placeholder="Search model, customer, alt bom..."
+                   class="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-[#005A9C] focus:outline-none" />
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Pick Scheduled Chiller from Monthly Plan</label>
+          <select id="planJobSelect" onchange="onJobSelectChange()" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white font-medium focus:ring-2 focus:ring-[#005A9C]">
+            <option value="">-- Upload monthly plan in Step 1 to select chillers --</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Or Direct Model + Alt BOM Selection</label>
+          <select id="directModelSelect" onchange="onModelSelectChange()" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white font-medium focus:ring-2 focus:ring-[#005A9C]">
+            <option value="">-- Upload dump.xlsx in Step 1 to select models --</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="remarksCard" class="hidden mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-start gap-2">
+        <i data-lucide="alert-circle" class="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0"></i>
+        <div>
+          <div id="altBomBadgeLine" class="mb-1"></div>
+          <strong class="font-bold">Customer Engineering Requirements / Non-Standard Remarks:</strong>
+          <p id="remarksText" class="mt-0.5 font-medium"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== STEP 3: MATERIAL AVAILABILITY ==================== -->
+    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+      
+      <!-- STAGING PROGRESS -->
+      <div id="kittingProgressCard" class="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-5">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div class="flex items-center gap-2">
+            <div class="p-1.5 bg-[#005A9C] text-white rounded-lg">
+              <i data-lucide="package-check" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h3 class="text-xs font-bold text-slate-800 uppercase tracking-wide">Line Feeder Staging & Kitting Progress</h3>
+              <p class="text-[11px] text-slate-500" id="kittingSubText">Check off materials as you load them onto the assembly trolley</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-extrabold font-mono-num text-[#005A9C]" id="kittingPercentText">0%</span>
+            <span class="text-xs font-medium text-slate-500 font-mono-num" id="kittingFractionText">(0 / 0 Items Staged)</span>
+          </div>
+        </div>
+
+        <div class="w-full bg-slate-200 h-3 rounded-full overflow-hidden">
+          <div id="kittingProgressBar" class="bg-[#005A9C] h-full rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+        </div>
+
+        <div id="kittingCompleteAlert" class="hidden mt-2.5 p-2 bg-emerald-50 border border-emerald-300 rounded-lg text-emerald-800 text-xs font-bold flex items-center gap-2">
+          <i data-lucide="check-circle" class="w-4 h-4 text-emerald-600"></i>
+          <span>100% Kit Complete — All components staged and ready for assembly line loading!</span>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="w-6 h-6 rounded-full bg-[#005A9C] text-white flex items-center justify-center text-xs font-bold">3</span>
+            <h2 class="text-base font-bold text-slate-800">Material Availability & Physical Audit Status</h2>
+          </div>
+          <p class="text-xs text-slate-500 mt-0.5" id="activeModelTitle">Upload your files in Step 1 to begin</p>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <div class="relative w-64 sm:w-80">
+            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+            <input type="text" id="partSearchInput" oninput="renderPartsTable()" placeholder="Search Part Code, Desc, Group..."
+                   class="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-[#005A9C] focus:outline-none bg-slate-50 focus:bg-white" />
+          </div>
+          <button onclick="exportFilteredCsv()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow flex-shrink-0">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i> Export CSV
+          </button>
+        </div>
+      </div>
+
+      <!-- FILTER TABS -->
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
+        <div class="flex flex-wrap items-center gap-2">
+          <button onclick="setFilter('ALL')" id="filterBtnALL" class="px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-[#005A9C] text-white shadow-sm">
+            <span>All Items</span>
+            <span id="tabCountAll" class="px-1.5 py-0.2 bg-white/20 rounded text-[10px]">0</span>
+          </button>
+
+          <button onclick="setFilter('AVAILABLE')" id="filterBtnAVAILABLE" class="px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+            <span>Available</span>
+            <span id="tabCountAvailable" class="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 rounded text-[10px]">0</span>
+          </button>
+
+          <button onclick="setFilter('SHORTAGE')" id="filterBtnSHORTAGE" class="px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200">
+            <span class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+            <span>Not Available / Shortage</span>
+            <span id="tabCountShortage" class="px-1.5 py-0.2 bg-red-100 text-red-800 rounded text-[10px]">0</span>
+          </button>
+
+          <button onclick="setFilter('DISCREPANCY')" id="filterBtnDISCREPANCY" class="px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200">
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+            <span>Discrepancy</span>
+            <span id="tabCountDiscrepancy" class="px-1.5 py-0.2 bg-amber-100 text-amber-800 rounded text-[10px]">0</span>
+          </button>
+        </div>
+
+        <div class="flex items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-200 text-xs">
+          <span class="font-bold text-slate-500 text-[11px] uppercase">Procurement:</span>
+          <button onclick="setProcFilter('ALL')" id="procBtnALL" class="px-2 py-0.5 rounded font-bold bg-[#005A9C] text-white">All</button>
+          <button onclick="setProcFilter('F')" id="procBtnF" class="px-2 py-0.5 rounded font-bold bg-white text-blue-700 border border-slate-200 hover:bg-blue-50">Vendor (F)</button>
+          <button onclick="setProcFilter('E')" id="procBtnE" class="px-2 py-0.5 rounded font-bold bg-white text-amber-700 border border-slate-200 hover:bg-amber-50">In-House (E)</button>
+        </div>
+      </div>
+
+      <!-- Parts Table -->
+      <div class="overflow-x-auto border border-slate-200 rounded-lg">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead class="bg-slate-100 text-slate-700 uppercase font-bold text-[11px] border-b border-slate-200">
+            <tr>
+              <th class="p-2.5 text-center bg-blue-100/50 text-[#005A9C]">Staged</th>
+              <th class="p-2.5">Plant</th>
+              <th class="p-2.5">Alt BOM</th>
+              <th class="p-2.5">BOM Component</th>
+              <th class="p-2.5">Component Desc</th>
+              <th class="p-2.5 text-center">Comp Qty(BUn)</th>
+              <th class="p-2.5 text-center">Material Group</th>
+              <th class="p-2.5 text-center">Procurement Type</th>
+              <th class="p-2.5 text-center bg-blue-50/50">ERP Stock</th>
+              <th class="p-2.5 text-center bg-amber-50/60 text-amber-900">Physical Stock (Floor)</th>
+              <th class="p-2.5 text-center">Availability Status</th>
+              <th class="p-2.5 text-center">Last Verified By</th>
+            </tr>
+          </thead>
+          <tbody id="partsTableBody" class="divide-y divide-slate-200">
+            <tr>
+              <td colspan="12" class="p-8 text-center text-slate-400 font-medium">
+                No model loaded. Upload <strong>dump.xlsx</strong> and <strong>NOV R-1.xlsx</strong> in Step 1 to display components.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- ==================== PRODUCTION PLAN MODAL ==================== -->
+  <div id="planViewerModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-3">
+    <div class="bg-white w-full max-w-7xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[94vh]">
+      <div class="bg-[#005A9C] p-4 text-white flex justify-between items-center">
+        <div class="flex items-center gap-2.5">
+          <div class="p-2 bg-white/10 rounded-lg">
+            <i data-lucide="calendar-range" class="w-5 h-5 text-white"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-base leading-none">Monthly Production Schedule — Sequence & All Details</h3>
+            <p class="text-[11px] text-blue-200 mt-0.5">Uploaded order sequence, assembly dates, customer specs, and engineering remarks</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="exportPlanCsv()" class="px-2.5 py-1 bg-white/20 hover:bg-white/30 text-white rounded text-xs font-semibold flex items-center gap-1">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i> Export Plan CSV
+          </button>
+          <button onclick="closePlanViewerModal()" class="text-white/80 hover:text-white p-1">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="p-4 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-2 flex-1">
+          <div class="relative w-full max-w-xs">
+            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+            <input type="text" id="planSequenceSearchInput" oninput="renderPlanSequenceTable()" placeholder="Search Model, Customer, Week, Specs..."
+                   class="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-[#005A9C] focus:outline-none" />
+          </div>
+          <span class="text-xs text-slate-500 font-medium" id="planSequenceTotalCount">Showing 0 chillers</span>
+        </div>
+      </div>
+
+      <div class="p-4 overflow-y-auto flex-1">
+        <div class="border border-slate-200 rounded-lg overflow-x-auto">
+          <table class="w-full text-left text-xs border-collapse min-w-[1200px]">
+            <thead class="bg-slate-100 text-slate-700 uppercase font-bold text-[11px] border-b border-slate-200 sticky top-0 z-10">
+              <tr>
+                <th class="p-2.5 text-center">Seq #</th>
+                <th class="p-2.5">Loading Plan</th>
+                <th class="p-2.5">Model</th>
+                <th class="p-2.5 text-center">BOM (Alt)</th>
+                <th class="p-2.5 text-center">Type</th>
+                <th class="p-2.5 text-center">Specs</th>
+                <th class="p-2.5 text-center">TR</th>
+                <th class="p-2.5 text-center">BLG</th>
+                <th class="p-2.5">Customer Name</th>
+                <th class="p-2.5 text-center">Assy Date</th>
+                <th class="p-2.5 text-center">Status</th>
+                <th class="p-2.5 text-center">Compr</th>
+                <th class="p-2.5 text-center">Drive</th>
+                <th class="p-2.5">Non Standard Remarks</th>
+                <th class="p-2.5 text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody id="planSequenceTableBody" class="divide-y divide-slate-200">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SHIFT AUDIT LOG MODAL ==================== -->
+  <div id="auditLogModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+    <div class="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+      <div class="bg-[#005A9C] p-4 text-white flex justify-between items-center">
+        <div class="flex items-center gap-2">
+          <i data-lucide="history" class="w-5 h-5 text-white"></i>
+          <div>
+            <h3 class="font-bold text-base leading-none">Shift Audit Log — History of Changes</h3>
+            <p class="text-[11px] text-blue-200 mt-0.5">Records physical stock alterations and kitting handovers</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="exportAuditLogCsv()" class="px-2.5 py-1 bg-white/20 hover:bg-white/30 text-white rounded text-xs font-semibold flex items-center gap-1">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i> Export Log
+          </button>
+          <button id="clearAuditLogBtn" onclick="clearAuditLog()" class="hidden px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-semibold items-center gap-1">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Clear History
+          </button>
+          <button onclick="closeAuditLogModal()" class="text-white/80 hover:text-white p-1">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="p-4 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3">
+        <div class="relative w-full max-w-sm">
+          <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+          <input type="text" id="auditSearchInput" oninput="renderAuditLogTable()" placeholder="Search by Part Code, User ID, Model..."
+                 class="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-[#005A9C] focus:outline-none" />
+        </div>
+        <span class="text-xs text-slate-500 font-medium" id="auditLogTotalCount">Total 0 change events recorded</span>
+      </div>
+
+      <div class="p-4 overflow-y-auto flex-1">
+        <div class="border border-slate-200 rounded-lg overflow-hidden">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead class="bg-slate-100 text-slate-700 uppercase font-bold text-[11px] border-b border-slate-200">
+              <tr>
+                <th class="p-2.5">Date & Time</th>
+                <th class="p-2.5">User</th>
+                <th class="p-2.5">Model / Alt BOM</th>
+                <th class="p-2.5">Part Code</th>
+                <th class="p-2.5">Action & Description</th>
+                <th class="p-2.5 text-center">Previous</th>
+                <th class="p-2.5 text-center">New Value</th>
+                <th class="p-2.5 text-center">Change</th>
+              </tr>
+            </thead>
+            <tbody id="auditLogTableBody" class="divide-y divide-slate-200">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SINGLE BOM UPLOAD MODAL ==================== -->
+  <div id="singleBomModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+    <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+      <div class="bg-[#005A9C] p-4 text-white flex justify-between items-center">
+        <div class="flex items-center gap-2">
+          <i data-lucide="file-plus" class="w-5 h-5 text-white"></i>
+          <h3 class="font-bold text-base">Upload Single Model Alt-BOM</h3>
+        </div>
+        <button onclick="closeSingleBomModal()" class="text-white/80 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-4">
+        <p class="text-xs text-slate-600">
+          Upload an Excel or CSV file for a specific model variant. Specify the <strong>Alt Bom No.</strong> so it doesn't overwrite a different configuration of the same model!
+        </p>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Model Code (Optional Override)</label>
+            <input type="text" id="singleBomModelOverride" placeholder="Auto from file"
+                   class="w-full p-2 border border-slate-300 rounded text-xs focus:ring-2 focus:ring-[#005A9C] focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Alt BOM No. (Optional Override)</label>
+            <input type="text" id="singleBomAltOverride" placeholder="Auto from file"
+                   class="w-full p-2 border border-slate-300 rounded text-xs focus:ring-2 focus:ring-[#005A9C] focus:outline-none" />
+          </div>
+        </div>
+
+        <div class="border-2 border-dashed border-slate-300 rounded-xl p-5 text-center bg-slate-50">
+          <i data-lucide="upload-cloud" class="w-8 h-8 mx-auto text-[#005A9C] mb-2"></i>
+          <p class="text-xs font-bold text-slate-700 mb-1">Choose Single BOM File (.xlsx, .xls, .csv)</p>
+          <label class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#005A9C] hover:bg-blue-800 text-white rounded text-xs font-semibold">
+            <i data-lucide="file-up" class="w-3.5 h-3.5"></i> Select & Import File
+            <input type="file" id="singleBomFileInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleSingleBomUpload(event)" />
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== USER MANAGEMENT MODAL ==================== -->
+  <div id="userModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+    <div class="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+      <div class="bg-[#005A9C] p-4 text-white flex justify-between items-center">
+        <div class="flex items-center gap-2">
+          <i data-lucide="shield-check" class="w-5 h-5 text-white"></i>
+          <h3 class="font-bold text-base">Authorized Logins & Permissions</h3>
+        </div>
+        <button onclick="toggleUserManager(false)" class="text-white/80 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-6 overflow-y-auto">
+        <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+          <h4 class="text-xs font-bold text-slate-700 uppercase mb-3">Add Authorized Login</h4>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">User ID</label>
+              <input type="text" id="newUserId" placeholder="e.g. feeder_shift_b" class="w-full p-2 border border-slate-300 rounded text-xs" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Password</label>
+              <input type="text" id="newUserPass" placeholder="e.g. blue123" class="w-full p-2 border border-slate-300 rounded text-xs" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Role Permission</label>
+              <select id="newUserRole" class="w-full p-2 border border-slate-300 rounded text-xs bg-white">
+                <option value="viewer">Viewer (Available / Not Available View Only)</option>
+                <option value="helper">Store Helper (Feeder: Can Kit & Edit Floor Count)</option>
+                <option value="admin">Admin (Full Master Access)</option>
+              </select>
+            </div>
+          </div>
+          <button onclick="handleCreateUser()" class="mt-3 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold flex items-center gap-1.5">
+            <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> Authorize & Save Login
+          </button>
+        </div>
+
+        <div>
+          <h4 class="text-xs font-bold text-slate-700 uppercase mb-2">Existing Authorized Users</h4>
+          <div class="border border-slate-200 rounded-lg overflow-hidden">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
+                <tr>
+                  <th class="p-2.5">User ID</th>
+                  <th class="p-2.5">Role</th>
+                  <th class="p-2.5">Password</th>
+                  <th class="p-2.5 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody id="userListTableBody" class="divide-y divide-slate-200"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== JAVASCRIPT STATE ENGINE ==================== -->
+  <script>
+    function normalizeAltBom(val) {
+      if (val === undefined || val === null) return "1";
+      const s = val.toString().trim();
+      const num = parseFloat(s);
+      if (!isNaN(num)) return parseInt(num, 10).toString();
+      return s.replace(/^0+/, "") || "0";
+    }
+
+    const INITIAL_USERS = [
+      { id: "admin", pass: "admin123", role: "admin", name: "Administrator" }
+    ];
+
+    let appUsers = JSON.parse(localStorage.getItem("BS_APP_USERS")) || INITIAL_USERS;
+    let currentUser = null;
+    let activeFilter = "ALL";
+    let activeProcFilter = "ALL";
+
+    let masterBoms = JSON.parse(localStorage.getItem("BS_MASTER_BOMS")) || {};
+    let monthlyPlan = JSON.parse(localStorage.getItem("BS_MONTHLY_PLAN")) || [];
+    let stockInventory = JSON.parse(localStorage.getItem("BS_STOCK_INVENTORY")) || {};
+    let kittingState = JSON.parse(localStorage.getItem("BS_KITTING_STATE")) || {};
+    let shiftAuditLog = JSON.parse(localStorage.getItem("BS_SHIFT_AUDIT_LOG")) || [];
+    let activeCompositeKey = Object.keys(masterBoms)[0] || "";
+
+    function initAuth() {
+      const savedUser = sessionStorage.getItem("BS_ACTIVE_USER");
+      if (savedUser) {
+        currentUser = JSON.parse(savedUser);
+        applyUserRoleUI();
+      } else {
+        document.getElementById("loginModal").classList.remove("hidden");
+      }
+      updateAuditBadge();
+    }
+
+    function handleLogin() {
+      const uId = document.getElementById("loginUserId").value.trim();
+      const uPass = document.getElementById("loginPassword").value.trim();
+      const errEl = document.getElementById("loginError");
+
+      const match = appUsers.find(u => u.id.toLowerCase() === uId.toLowerCase() && u.pass === uPass);
+      if (!match) {
+        errEl.textContent = "Invalid User ID or Password.";
+        errEl.classList.remove("hidden");
+        return;
+      }
+
+      currentUser = match;
+      sessionStorage.setItem("BS_ACTIVE_USER", JSON.stringify(currentUser));
+      errEl.classList.add("hidden");
+      document.getElementById("loginModal").classList.add("hidden");
+      applyUserRoleUI();
+    }
+
+    function handleLogout() {
+      sessionStorage.removeItem("BS_ACTIVE_USER");
+      currentUser = null;
+      location.reload();
+    }
+
+    function applyUserRoleUI() {
+      document.getElementById("loginModal").classList.add("hidden");
+      document.getElementById("headerUserId").textContent = currentUser.id;
+      
+      const roleBadge = document.getElementById("headerRoleBadge");
+      const adminUploadSection = document.getElementById("adminUploadSection");
+      const adminUsersBtn = document.getElementById("adminUsersBtn");
+      const helperNotice = document.getElementById("helperNoticeBanner");
+      const viewerNotice = document.getElementById("viewerNoticeBanner");
+
+      helperNotice.classList.add("hidden");
+      viewerNotice.classList.add("hidden");
+
+      if (currentUser.role === "admin") {
+        roleBadge.textContent = "ADMIN";
+        roleBadge.className = "px-1.5 py-0.5 bg-amber-400 text-slate-900 font-bold rounded text-[10px]";
+        adminUploadSection.classList.remove("hidden");
+        adminUsersBtn.classList.remove("hidden");
+        adminUsersBtn.classList.add("flex");
+      } else if (currentUser.role === "helper") {
+        roleBadge.textContent = "STORE HELPER";
+        roleBadge.className = "px-1.5 py-0.5 bg-blue-200 text-blue-900 font-bold rounded text-[10px]";
+        adminUploadSection.classList.add("hidden");
+        adminUsersBtn.classList.add("hidden");
+        helperNotice.classList.remove("hidden");
+      } else if (currentUser.role === "viewer") {
+        roleBadge.textContent = "VIEWER / AUDITOR";
+        roleBadge.className = "px-1.5 py-0.5 bg-purple-200 text-purple-900 font-bold rounded text-[10px]";
+        adminUploadSection.classList.add("hidden");
+        adminUsersBtn.classList.add("hidden");
+        viewerNotice.classList.remove("hidden");
+      }
+
+      if (Object.keys(masterBoms).length > 0) {
+        document.getElementById("bomStatus").textContent = `Loaded ${Object.keys(masterBoms).length} Model Variants`;
+      }
+      if (monthlyPlan.length > 0) {
+        document.getElementById("planStatus").textContent = `Loaded ${monthlyPlan.length} Scheduled Chillers`;
+      }
+      if (Object.keys(stockInventory).length > 0) {
+        document.getElementById("stockStatus").textContent = `Loaded ${Object.keys(stockInventory).length} Stock Items`;
+      }
+
+      renderSelectors();
+      renderPartsTable();
+      renderUserList();
+      updateAuditBadge();
+      lucide.createIcons();
+    }
+
+    function toggleUserManager(show) {
+      if (currentUser.role !== "admin") return;
+      const modal = document.getElementById("userModal");
+      if (show) modal.classList.remove("hidden");
+      else modal.classList.add("hidden");
+    }
+
+    function renderUserList() {
+      const tbody = document.getElementById("userListTableBody");
+      tbody.innerHTML = "";
+
+      appUsers.forEach((u, idx) => {
+        let badgeColor = "bg-blue-100 text-blue-800";
+        if (u.role === "admin") badgeColor = "bg-amber-100 text-amber-800";
+        if (u.role === "viewer") badgeColor = "bg-purple-100 text-purple-800";
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td class="p-2.5 font-bold text-slate-800">${u.id}</td>
+          <td class="p-2.5">
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold ${badgeColor}">
+              ${u.role.toUpperCase()}
+            </span>
+          </td>
+          <td class="p-2.5 font-mono text-slate-500">${u.pass}</td>
+          <td class="p-2.5 text-center">
+            ${u.id === 'admin' ? '<span class="text-slate-400 text-[10px]">Root Admin</span>' : `
+              <button onclick="deleteUser(${idx})" class="text-red-600 hover:text-red-800 p-1">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              </button>
+            `}
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+      lucide.createIcons();
+    }
+
+    function handleCreateUser() {
+      const id = document.getElementById("newUserId").value.trim();
+      const pass = document.getElementById("newUserPass").value.trim();
+      const role = document.getElementById("newUserRole").value;
+
+      if (!id || !pass) return alert("Please enter User ID and Password.");
+      if (appUsers.some(u => u.id.toLowerCase() === id.toLowerCase())) return alert("User ID already exists.");
+
+      appUsers.push({ id, pass, role, name: id });
+      localStorage.setItem("BS_APP_USERS", JSON.stringify(appUsers));
+      document.getElementById("newUserId").value = "";
+      document.getElementById("newUserPass").value = "";
+      renderUserList();
+      alert(`User "${id}" saved successfully!`);
+    }
+
+    function deleteUser(idx) {
+      if (confirm(`Revoke login for ${appUsers[idx].id}?`)) {
+        appUsers.splice(idx, 1);
+        localStorage.setItem("BS_APP_USERS", JSON.stringify(appUsers));
+        renderUserList();
+      }
+    }
+
+    function parse8ColumnRow(row) {
+      const keys = Object.keys(row);
+      const findKey = (candidates) => keys.find(k => candidates.some(c => k.trim().toLowerCase() === c.toLowerCase()));
+
+      const materialKey = findKey(['Material', 'MODEL']);
+      const plantKey = findKey(['Plant']);
+      const altBomKey = findKey(['Alt Bom No.', 'Alt Bom', 'Alt BOM No', 'BOM']);
+      const compKey = findKey(['BOM Component', 'Component', 'Part Code']);
+      const descKey = findKey(['Component Desc', 'Description']);
+      const qtyKey = findKey(['Comp Qty(BUn)', 'Qty', 'Comp Qty']);
+      const groupKey = findKey(['Material Group', 'Mat Group']);
+      const procKey = findKey(['Procurement Type', 'Proc Type', 'Procurement']);
+
+      const material = materialKey && row[materialKey] ? row[materialKey].toString().trim() : '';
+      const plant = plantKey && row[plantKey] ? row[plantKey].toString().trim() : '1200';
+      const altBom = normalizeAltBom(altBomKey && row[altBomKey] !== undefined ? row[altBomKey] : '1');
+      const compCode = compKey && row[compKey] ? row[compKey].toString().trim() : '';
+      const desc = descKey && row[descKey] ? row[descKey].toString().trim() : '';
+      const qty = qtyKey && row[qtyKey] ? parseFloat(row[qtyKey]) || 1.0 : 1.0;
+      const group = groupKey && row[groupKey] ? row[groupKey].toString().trim() : 'PARTS';
+      
+      let rawProc = procKey && row[procKey] ? row[procKey].toString().trim().toUpperCase() : 'F';
+      const proc = (rawProc.startsWith('E')) ? 'E' : 'F';
+
+      return { material, plant, altBom, compCode, desc, qty, group, proc };
+    }
+
+    function handleBomUpload(e) {
+      if (currentUser.role !== "admin") return alert("Unauthorized.");
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        const data = new Uint8Array(evt.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet);
+
+        let parsedBoms = {};
+        json.forEach(row => {
+          const item = parse8ColumnRow(row);
+          if (item.material && item.compCode) {
+            const compKey = `${item.material}:::${item.altBom}`;
+            if (!parsedBoms[compKey]) parsedBoms[compKey] = [];
+            
+            parsedBoms[compKey].push({
+              plant: item.plant,
+              altBom: item.altBom,
+              code: item.compCode,
+              desc: item.desc,
+              qty: item.qty,
+              group: item.group,
+              proc: item.proc
+            });
+
+            if (!stockInventory[item.compCode]) {
+              stockInventory[item.compCode] = { system: 0, physical: 0, updatedBy: 'system', updatedAt: new Date().toISOString().split('T')[0] };
+            }
+          }
+        });
+
+        const keys = Object.keys(parsedBoms);
+        if (keys.length > 0) {
+          masterBoms = parsedBoms;
+          localStorage.setItem("BS_MASTER_BOMS", JSON.stringify(masterBoms));
+          localStorage.setItem("BS_STOCK_INVENTORY", JSON.stringify(stockInventory));
+          document.getElementById("bomStatus").textContent = `Loaded ${keys.length} Model Alt-BOM Variants`;
+          activeCompositeKey = keys[0];
+          logAuditEvent("MASTER-BOM", `Bulk BOM Excel Dump uploaded (${keys.length} models)`, "Master Upload", "-", keys.length, "+");
+          renderSelectors();
+          renderPartsTable();
+          alert(`Successfully loaded ${keys.length} distinct Model + Alt-BOM variants!`);
+        } else {
+          alert("Could not extract BOM rows. Please verify column headers.");
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function openSingleBomModal() {
+      if (currentUser.role !== "admin") return;
+      document.getElementById("singleBomModal").classList.remove("hidden");
+    }
+
+    function closeSingleBomModal() {
+      document.getElementById("singleBomModal").classList.add("hidden");
+    }
+
+    function handleSingleBomUpload(e) {
+      if (currentUser.role !== "admin") return alert("Unauthorized.");
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const overrideModel = document.getElementById("singleBomModelOverride").value.trim();
+      const overrideAlt = document.getElementById("singleBomAltOverride").value.trim();
+
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        const data = new Uint8Array(evt.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet);
+
+        let targetModel = overrideModel;
+        let targetAlt = overrideAlt ? normalizeAltBom(overrideAlt) : '';
+        let singleItems = [];
+
+        json.forEach(row => {
+          const item = parse8ColumnRow(row);
+          if (item.compCode) {
+            if (!targetModel && item.material) targetModel = item.material;
+            if (!targetAlt && item.altBom) targetAlt = item.altBom;
+
+            singleItems.push({
+              plant: item.plant,
+              altBom: targetAlt || item.altBom || '1',
+              code: item.compCode,
+              desc: item.desc,
+              qty: item.qty,
+              group: item.group,
+              proc: item.proc
+            });
+
+            if (!stockInventory[item.compCode]) {
+              stockInventory[item.compCode] = { system: 0, physical: 0, updatedBy: 'system', updatedAt: new Date().toISOString().split('T')[0] };
+            }
+          }
+        });
+
+        if (!targetModel) return alert("Could not detect model name.");
+        if (!targetAlt) targetAlt = "1";
+
+        const compositeKey = `${targetModel}:::${targetAlt}`;
+        masterBoms[compositeKey] = singleItems;
+        activeCompositeKey = compositeKey;
+
+        localStorage.setItem("BS_MASTER_BOMS", JSON.stringify(masterBoms));
+        localStorage.setItem("BS_STOCK_INVENTORY", JSON.stringify(stockInventory));
+        logAuditEvent(targetModel, `Single Model Alt BOM variant added (${singleItems.length} parts)`, "Single BOM Upload", "-", singleItems.length, "+");
+        closeSingleBomModal();
+        renderSelectors();
+        renderPartsTable();
+        alert(`BOM variant for "${targetModel}" [Alt BOM: ${targetAlt}] loaded successfully!`);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function handlePlanUpload(e) {
+      if (currentUser.role !== "admin") return alert("Unauthorized.");
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        const data = new Uint8Array(evt.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+        let headerIdx = -1;
+        for (let i = 0; i < Math.min(rawRows.length, 15); i++) {
+          const r = rawRows[i] || [];
+          if (r.some(cell => typeof cell === 'string' && (cell.includes('MODEL') || cell.includes('LD-PLAN')))) {
+            headerIdx = i;
+            break;
+          }
+        }
+
+        if (headerIdx === -1) return alert("Could not locate plan header row (MODEL, LD-PLAN, BOM, ASSY DT).");
+
+        const headers = rawRows[headerIdx].map(h => (h || '').toString().trim());
+        const findCol = (candidates) => headers.findIndex(h => candidates.some(c => h.toLowerCase().includes(c.toLowerCase())));
+
+        const ldPlanIdx = findCol(['LD-PLAN', 'PLAN', 'WEEK']);
+        const modelIdx = findCol(['MODEL']);
+        const typeIdx = findCol(['TYPE']);
+        const specsIdx = findCol(['SPECS']);
+        const altBomIdx = findCol(['BOM', 'ALT']);
+        const trIdx = findCol(['TR']);
+        const blgIdx = findCol(['BLG']);
+        const regionIdx = findCol(['REGION']);
+        const lobIdx = findCol(['LOB']);
+        const customerIdx = findCol(['CUSTOMER']);
+        const assyDateIdx = findCol(['ASSY DT', 'ASSY DATE']);
+        const statusIdx = findCol(['STATUS']);
+        const icoDateIdx = findCol(['ICO DATE']);
+        const reqdDateIdx = findCol(['REQD DT', 'REQD DATE']);
+        const comprIdx = findCol(['COMPR']);
+        const driveIdx = findCol(['DRIVE']);
+        const remarksIdx = findCol(['REMARKS', 'NON STD REMARKS']);
+
+        let newPlan = [];
+        let seqCounter = 1;
+
+        for (let i = headerIdx + 1; i < rawRows.length; i++) {
+          const row = rawRows[i];
+          if (!row || !row[modelIdx]) continue;
+          const modelVal = row[modelIdx].toString().trim();
+          if (!modelVal) continue;
+
+          const rawAlt = (altBomIdx !== -1 && row[altBomIdx] !== undefined) ? row[altBomIdx] : '1';
+          const altVal = normalizeAltBom(rawAlt);
+
+          newPlan.push({
+            id: `JOB-${seqCounter}`,
+            seq: seqCounter,
+            ldPlan: ldPlanIdx !== -1 && row[ldPlanIdx] ? row[ldPlanIdx].toString().trim() : `WEEK-${seqCounter}`,
+            model: modelVal,
+            type: typeIdx !== -1 && row[typeIdx] ? row[typeIdx].toString().trim() : '',
+            specs: specsIdx !== -1 && row[specsIdx] ? row[specsIdx].toString().trim() : 'STD',
+            altBom: altVal,
+            tr: trIdx !== -1 && row[trIdx] ? row[trIdx].toString().trim() : '',
+            blg: blgIdx !== -1 && row[blgIdx] ? row[blgIdx].toString().trim() : '',
+            region: regionIdx !== -1 && row[regionIdx] ? row[regionIdx].toString().trim() : '',
+            lob: lobIdx !== -1 && row[lobIdx] ? row[lobIdx].toString().trim() : '',
+            customer: customerIdx !== -1 && row[customerIdx] ? row[customerIdx].toString().trim() : 'Standard Customer',
+            assyDate: assyDateIdx !== -1 && row[assyDateIdx] ? row[assyDateIdx].toString().trim() : 'TBD',
+            status: statusIdx !== -1 && row[statusIdx] ? row[statusIdx].toString().trim() : 'YET TO START',
+            icoDate: icoDateIdx !== -1 && row[icoDateIdx] ? row[icoDateIdx].toString().trim() : '',
+            reqdDate: reqdDateIdx !== -1 && row[reqdDateIdx] ? row[reqdDateIdx].toString().trim() : '',
+            compr: comprIdx !== -1 && row[comprIdx] ? row[comprIdx].toString().trim() : '',
+            drive: driveIdx !== -1 && row[driveIdx] ? row[driveIdx].toString().trim() : '',
+            remarks: remarksIdx !== -1 && row[remarksIdx] ? row[remarksIdx].toString().trim() : ''
+          });
+
+          seqCounter++;
+        }
+
+        if (newPlan.length > 0) {
+          monthlyPlan = newPlan;
+          localStorage.setItem("BS_MONTHLY_PLAN", JSON.stringify(monthlyPlan));
+          document.getElementById("planStatus").textContent = `Loaded ${newPlan.length} Scheduled Chillers`;
+          document.getElementById("headerPlanCountBadge").textContent = newPlan.length;
+          logAuditEvent("MONTHLY-PLAN", `Imported monthly sequence schedule (${newPlan.length} chillers)`, "Plan Upload", "-", newPlan.length, "+");
+          renderSelectors();
+          renderPartsTable();
+          alert(`Imported ${newPlan.length} scheduled chillers preserving exact sequence & details!`);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function handleStockUpload(e) {
+      if (currentUser.role !== "admin") return alert("Unauthorized.");
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        const data = new Uint8Array(evt.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet);
+
+        let count = 0;
+        json.forEach(row => {
+          const code = (row['Material'] || row['Part Code'] || row['BOM Component'] || '').toString().trim();
+          const stock = parseFloat(row['Unrestricted'] || row['Stock'] || row['System Stock'] || 0);
+          if (code) {
+            if (!stockInventory[code]) {
+              stockInventory[code] = { system: stock, physical: 0, updatedBy: 'admin', updatedAt: new Date().toISOString().split('T')[0] };
+            } else {
+              stockInventory[code].system = stock;
+            }
+            count++;
+          }
+        });
+
+        localStorage.setItem("BS_STOCK_INVENTORY", JSON.stringify(stockInventory));
+        document.getElementById("stockStatus").textContent = `Updated ${count} stock parts`;
+        logAuditEvent("ERP-STOCK", `Synchronized ERP system stock for ${count} items`, "Stock Dump", "-", count, "+");
+        renderPartsTable();
+        alert(`Successfully synchronized ${count} stock items!`);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function openPlanViewerModal() {
+      document.getElementById("planViewerModal").classList.remove("hidden");
+      renderPlanSequenceTable();
+      lucide.createIcons();
+    }
+
+    function closePlanViewerModal() {
+      document.getElementById("planViewerModal").classList.add("hidden");
+    }
+
+    function renderPlanSequenceTable() {
+      const tbody = document.getElementById("planSequenceTableBody");
+      tbody.innerHTML = "";
+      const search = (document.getElementById("planSequenceSearchInput")?.value || "").trim().toLowerCase();
+
+      let filtered = monthlyPlan.filter(job => {
+        if (!search) return true;
+        return (
+          (job.model && job.model.toLowerCase().includes(search)) ||
+          (job.customer && job.customer.toLowerCase().includes(search)) ||
+          (job.ldPlan && job.ldPlan.toLowerCase().includes(search)) ||
+          (job.specs && job.specs.toLowerCase().includes(search)) ||
+          (job.type && job.type.toLowerCase().includes(search)) ||
+          (job.remarks && job.remarks.toLowerCase().includes(search))
+        );
+      });
+
+      document.getElementById("planSequenceTotalCount").textContent = `Showing ${filtered.length} of ${monthlyPlan.length} chillers`;
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="15" class="p-8 text-center text-slate-400 font-medium">No scheduled chillers found. Please upload <strong>NOV R-1.xlsx</strong>.</td></tr>`;
+        return;
+      }
+
+      filtered.forEach((job, idx) => {
+        const isCurrent = activeCompositeKey === `${job.model}:::${normalizeAltBom(job.altBom)}`;
+        const tr = document.createElement("tr");
+        tr.className = `${isCurrent ? 'bg-blue-50 font-medium' : 'hover:bg-slate-50'} transition border-b border-slate-200`;
+        
+        let specBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${job.specs === 'NON STD' ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-slate-100 text-slate-700'}">${job.specs || 'STD'}</span>`;
+        let statusBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600">${job.status || 'YET TO START'}</span>`;
+
+        tr.innerHTML = `
+          <td class="p-2.5 text-center font-mono font-bold text-slate-500">${job.seq || idx + 1}</td>
+          <td class="p-2.5 font-bold text-[#005A9C]">${job.ldPlan || '-'}</td>
+          <td class="p-2.5 font-bold font-mono text-slate-900">${job.model}</td>
+          <td class="p-2.5 text-center font-mono font-bold bg-blue-50/70 text-blue-900">${normalizeAltBom(job.altBom)}</td>
+          <td class="p-2.5 text-center font-mono text-slate-700">${job.type || '-'}</td>
+          <td class="p-2.5 text-center">${specBadge}</td>
+          <td class="p-2.5 text-center font-mono-num font-semibold">${job.tr || '-'}</td>
+          <td class="p-2.5 text-center font-mono-num text-slate-500">${job.blg || '-'}</td>
+          <td class="p-2.5 font-medium text-slate-800">${job.customer || 'Standard Customer'}</td>
+          <td class="p-2.5 text-center font-mono text-slate-600 whitespace-nowrap">${job.assyDate || '-'}</td>
+          <td class="p-2.5 text-center">${statusBadge}</td>
+          <td class="p-2.5 text-center font-mono text-[10px] text-slate-600">${job.compr || '-'}</td>
+          <td class="p-2.5 text-center font-mono text-[10px] text-slate-600">${job.drive || '-'}</td>
+          <td class="p-2.5 text-[11px] text-slate-600 max-w-xs truncate" title="${job.remarks || ''}">${job.remarks || '-'}</td>
+          <td class="p-2.5 text-center whitespace-nowrap">
+            <button onclick="selectJobFromPlanViewer('${job.model}', '${job.altBom}')" 
+                    class="px-2.5 py-1 ${isCurrent ? 'bg-blue-800 text-white' : 'bg-[#005A9C] hover:bg-blue-800 text-white'} rounded text-xs font-semibold shadow-sm transition flex items-center gap-1 mx-auto">
+              <i data-lucide="crosshair" class="w-3 h-3"></i> ${isCurrent ? 'Active' : 'Select & Feed'}
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+      lucide.createIcons();
+    }
+
+    function selectJobFromPlanViewer(model, altBom) {
+      const normAlt = normalizeAltBom(altBom);
+      const targetKey = `${model}:::${normAlt}`;
+
+      if (masterBoms[targetKey]) {
+        activeCompositeKey = targetKey;
+      } else {
+        const matched = Object.keys(masterBoms).find(k => {
+          const p = k.split(":::");
+          return p[0] === model && normalizeAltBom(p[1]) === normAlt;
+        });
+        if (matched) activeCompositeKey = matched;
+        else {
+          const anyModel = Object.keys(masterBoms).find(k => k.startsWith(model + ":::"));
+          if (anyModel) activeCompositeKey = anyModel;
+          else {
+            alert(`Model ${model} is not yet loaded in BOM dump. Please upload dump.xlsx.`);
+          }
+        }
+      }
+
+      const planSelect = document.getElementById("planJobSelect");
+      const foundIdx = monthlyPlan.findIndex(j => j.model === model && normalizeAltBom(j.altBom) === normAlt);
+      if (foundIdx !== -1) planSelect.value = foundIdx;
+
+      document.getElementById("directModelSelect").value = activeCompositeKey;
+
+      const job = monthlyPlan[foundIdx];
+      const remarksCard = document.getElementById("remarksCard");
+      const remarksText = document.getElementById("remarksText");
+      const altLine = document.getElementById("altBomBadgeLine");
+
+      altLine.innerHTML = `<span class="px-2 py-0.5 bg-blue-100 text-blue-900 font-bold rounded text-[11px] border border-blue-300">Model: ${model} | Scheduled Alt BOM: ${normAlt}</span>`;
+      remarksText.textContent = job && job.remarks ? job.remarks : "Standard chiller specifications.";
+      remarksCard.classList.remove("hidden");
+
+      renderPartsTable();
+      closePlanViewerModal();
+    }
+
+    function exportPlanCsv() {
+      if (monthlyPlan.length === 0) return alert("No production plan data to export.");
+
+      let csv = "data:text/csv;charset=utf-8,";
+      csv += "Seq,Loading Plan,Model,Alt BOM,Type,Specs,TR,BLG,Region,LOB,Customer,Assy Date,Status,ICO Date,Reqd Date,Compressor,Drive,Remarks\n";
+
+      monthlyPlan.forEach((job, idx) => {
+        csv += `${job.seq || idx + 1},"${job.ldPlan || ''}","${job.model}","${normalizeAltBom(job.altBom)}","${job.type || ''}","${job.specs || ''}",${job.tr || ''},${job.blg || ''},"${job.region || ''}","${job.lob || ''}","${(job.customer || '').replace(/"/g, '""')}","${job.assyDate || ''}","${job.status || ''}","${job.icoDate || ''}","${job.reqdDate || ''}","${job.compr || ''}","${job.drive || ''}","${(job.remarks || '').replace(/"/g, '""')}"\n`;
+      });
+
+      const encoded = encodeURI(csv);
+      const link = document.createElement("a");
+      link.setAttribute("href", encoded);
+      link.setAttribute("download", `Monthly_Production_Sequence_${new Date().toISOString().split("T")[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function logAuditEvent(partCode, desc, action, prevVal, newVal, diff) {
+      const now = new Date();
+      const dateStr = now.toISOString().split("T")[0];
+      const timeStr = now.toTimeString().split(" ")[0];
+      const entry = {
+        id: "LOG-" + Date.now(),
+        timestamp: `${dateStr} ${timeStr}`,
+        userId: currentUser ? currentUser.id : "system",
+        role: currentUser ? currentUser.role : "unknown",
+        modelKey: activeCompositeKey || "-",
+        partCode: partCode,
+        desc: desc || "-",
+        action: action,
+        prevVal: prevVal !== undefined ? prevVal.toString() : "-",
+        newVal: newVal !== undefined ? newVal.toString() : "-",
+        diff: diff !== undefined ? diff.toString() : "-"
+      };
+
+      shiftAuditLog.unshift(entry);
+      localStorage.setItem("BS_SHIFT_AUDIT_LOG", JSON.stringify(shiftAuditLog));
+      updateAuditBadge();
+    }
+
+    function updateAuditBadge() {
+      const badge = document.getElementById("auditCountBadge");
+      if (badge) badge.textContent = shiftAuditLog.length;
+      const planBadge = document.getElementById("headerPlanCountBadge");
+      if (planBadge) planBadge.textContent = monthlyPlan.length;
+    }
+
+    function openAuditLogModal() {
+      document.getElementById("auditLogModal").classList.remove("hidden");
+      const clearBtn = document.getElementById("clearAuditLogBtn");
+      if (currentUser && currentUser.role === "admin") {
+        clearBtn.classList.remove("hidden");
+        clearBtn.classList.add("flex");
+      } else {
+        clearBtn.classList.add("hidden");
+      }
+      renderAuditLogTable();
+      lucide.createIcons();
+    }
+
+    function closeAuditLogModal() {
+      document.getElementById("auditLogModal").classList.add("hidden");
+    }
+
+    function clearAuditLog() {
+      if (currentUser.role !== "admin") return alert("Unauthorized.");
+      if (confirm("Are you sure you want to clear the entire Shift Audit Log history?")) {
+        shiftAuditLog = [];
+        localStorage.setItem("BS_SHIFT_AUDIT_LOG", JSON.stringify(shiftAuditLog));
+        renderAuditLogTable();
+        updateAuditBadge();
+      }
+    }
+
+    function renderAuditLogTable() {
+      const tbody = document.getElementById("auditLogTableBody");
+      tbody.innerHTML = "";
+      const search = (document.getElementById("auditSearchInput")?.value || "").trim().toLowerCase();
+
+      let filtered = shiftAuditLog.filter(log => {
+        if (!search) return true;
+        return (
+          log.partCode.toLowerCase().includes(search) ||
+          log.desc.toLowerCase().includes(search) ||
+          log.userId.toLowerCase().includes(search) ||
+          log.modelKey.toLowerCase().includes(search) ||
+          log.action.toLowerCase().includes(search) ||
+          log.timestamp.includes(search)
+        );
+      });
+
+      document.getElementById("auditLogTotalCount").textContent = `Showing ${filtered.length} of ${shiftAuditLog.length} events`;
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400 font-medium">No audit log records found.</td></tr>`;
+        return;
+      }
+
+      filtered.forEach(log => {
+        const parts = log.modelKey.split(":::");
+        const mCode = parts[0];
+        const aBom = parts[1] || "1";
+
+        let roleBadge = "bg-blue-100 text-blue-800";
+        if (log.role === "admin") roleBadge = "bg-amber-100 text-amber-800";
+        if (log.role === "viewer") roleBadge = "bg-purple-100 text-purple-800";
+
+        let diffBadge = `<span class="font-mono font-bold text-slate-600">${log.diff}</span>`;
+        if (log.diff.startsWith("+")) {
+          diffBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 font-mono">${log.diff}</span>`;
+        } else if (log.diff.startsWith("-")) {
+          diffBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 font-mono">${log.diff}</span>`;
+        }
+
+        const tr = document.createElement("tr");
+        tr.className = "hover:bg-slate-50 transition border-b border-slate-200";
+        tr.innerHTML = `
+          <td class="p-2.5 font-mono text-[11px] text-slate-600 whitespace-nowrap">${log.timestamp}</td>
+          <td class="p-2.5">
+            <div class="font-bold text-slate-800">${log.userId}</div>
+            <span class="px-1.5 py-0.2 rounded text-[9px] font-bold ${roleBadge} uppercase">${log.role}</span>
+          </td>
+          <td class="p-2.5">
+            <div class="font-bold text-blue-900">${mCode}</div>
+            <div class="text-[10px] text-slate-500 font-mono">Alt BOM: ${aBom}</div>
+          </td>
+          <td class="p-2.5 font-bold font-mono text-slate-800">${log.partCode}</td>
+          <td class="p-2.5">
+            <div class="font-semibold text-slate-800">${log.action}</div>
+            <div class="text-[10px] text-slate-500 line-clamp-1">${log.desc}</div>
+          </td>
+          <td class="p-2.5 text-center font-mono-num font-semibold text-slate-500">${log.prevVal}</td>
+          <td class="p-2.5 text-center font-mono-num font-bold text-slate-800">${log.newVal}</td>
+          <td class="p-2.5 text-center">${diffBadge}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function exportAuditLogCsv() {
+      if (shiftAuditLog.length === 0) return alert("No audit log records to export.");
+
+      let csv = "data:text/csv;charset=utf-8,";
+      csv += "Timestamp,User ID,Role,Model,Alt BOM,Part Code,Component Description,Action,Previous Value,New Value,Difference\n";
+
+      shiftAuditLog.forEach(log => {
+        const parts = log.modelKey.split(":::");
+        const mCode = parts[0];
+        const aBom = parts[1] || "1";
+        csv += `"${log.timestamp}","${log.userId}","${log.role}","${mCode}","${aBom}","${log.partCode}","${log.desc.replace(/"/g, '""')}","${log.action}","${log.prevVal}","${log.newVal}","${log.diff}"\n`;
+      });
+
+      const encoded = encodeURI(csv);
+      const link = document.createElement("a");
+      link.setAttribute("href", encoded);
+      link.setAttribute("download", `Shift_Audit_Log_${new Date().toISOString().split("T")[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function setFilter(filterType) {
+      activeFilter = filterType;
+      ['ALL', 'AVAILABLE', 'SHORTAGE', 'DISCREPANCY'].forEach(t => {
+        const btn = document.getElementById(`filterBtn${t}`);
+        if (t === filterType) {
+          btn.className = "px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-[#005A9C] text-white shadow-sm";
+        } else {
+          btn.className = "px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200";
+        }
+      });
+      renderPartsTable();
+    }
+
+    function setProcFilter(procType) {
+      activeProcFilter = procType;
+      ['ALL', 'F', 'E'].forEach(p => {
+        const btn = document.getElementById(`procBtn${p}`);
+        if (p === procType) {
+          btn.className = "px-2 py-0.5 rounded font-bold bg-[#005A9C] text-white";
+        } else {
+          btn.className = "px-2 py-0.5 rounded font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-100";
+        }
+      });
+      renderPartsTable();
+    }
+
+    function filterDropdownOptions() {
+      const query = document.getElementById("modelFilterInput").value.trim().toLowerCase();
+      renderSelectors(query);
+    }
+
+    function renderSelectors(searchQuery = "") {
+      const q = searchQuery.toLowerCase();
+
+      const planSelect = document.getElementById("planJobSelect");
+      if (monthlyPlan.length === 0) {
+        planSelect.innerHTML = `<option value="">-- No monthly plan loaded. Upload NOV R-1.xlsx above --</option>`;
+      } else {
+        planSelect.innerHTML = `<option value="">-- Choose scheduled chiller from monthly plan --</option>`;
+        monthlyPlan.forEach((job, idx) => {
+          const text = `[${job.assyDate || 'No Date'}] ${job.model} (Alt BOM: ${normalizeAltBom(job.altBom)}) — ${job.customer}`;
+          if (!q || text.toLowerCase().includes(q) || (job.remarks && job.remarks.toLowerCase().includes(q))) {
+            const opt = document.createElement("option");
+            opt.value = idx;
+            opt.textContent = text;
+            planSelect.appendChild(opt);
+          }
+        });
+      }
+
+      const modelSelect = document.getElementById("directModelSelect");
+      const keys = Object.keys(masterBoms);
+      if (keys.length === 0) {
+        modelSelect.innerHTML = `<option value="">-- No BOM loaded. Upload dump.xlsx above --</option>`;
+      } else {
+        modelSelect.innerHTML = `<option value="">-- Choose Chiller Model & Alt BOM directly --</option>`;
+        keys.forEach(k => {
+          const parts = k.split(":::");
+          const m = parts[0];
+          const a = normalizeAltBom(parts[1] || "1");
+          const text = `${m} [Alt BOM: ${a}] (${masterBoms[k].length} components)`;
+          if (!q || text.toLowerCase().includes(q)) {
+            const opt = document.createElement("option");
+            opt.value = k;
+            opt.textContent = text;
+            if (k === activeCompositeKey) opt.selected = true;
+            modelSelect.appendChild(opt);
+          }
+        });
+      }
+    }
+
+    function onJobSelectChange() {
+      const idx = document.getElementById("planJobSelect").value;
+      if (idx === "") return;
+      const job = monthlyPlan[idx];
+      const jobAltNormalized = normalizeAltBom(job.altBom);
+
+      const exactKey = `${job.model}:::${jobAltNormalized}`;
+      
+      if (masterBoms[exactKey]) {
+        activeCompositeKey = exactKey;
+      } else {
+        const matchedKey = Object.keys(masterBoms).find(k => {
+          const p = k.split(":::");
+          return p[0] === job.model && normalizeAltBom(p[1]) === jobAltNormalized;
+        });
+
+        if (matchedKey) {
+          activeCompositeKey = matchedKey;
+        } else {
+          const anyModelKey = Object.keys(masterBoms).find(k => k.startsWith(job.model + ":::"));
+          if (anyModelKey) {
+            const availAlt = anyModelKey.split(":::")[1];
+            activeCompositeKey = anyModelKey;
+            alert(`Notice: Alt BOM ${jobAltNormalized} for model ${job.model} was not found in BOM dump. Loaded available variant: ${availAlt}`);
+          } else {
+            alert(`Model ${job.model} is not yet loaded in BOM dump. Please upload dump.xlsx containing this model.`);
+          }
+        }
+      }
+
+      const remarksCard = document.getElementById("remarksCard");
+      const remarksText = document.getElementById("remarksText");
+      const altLine = document.getElementById("altBomBadgeLine");
+      
+      altLine.innerHTML = `<span class="px-2 py-0.5 bg-blue-100 text-blue-900 font-bold rounded text-[11px] border border-blue-300">Model: ${job.model} | Scheduled Alt BOM: ${jobAltNormalized}</span>`;
+      remarksText.textContent = job.remarks || "Standard chiller specifications.";
+      remarksCard.classList.remove("hidden");
+
+      document.getElementById("directModelSelect").value = activeCompositeKey;
+      renderPartsTable();
+    }
+
+    function onModelSelectChange() {
+      const k = document.getElementById("directModelSelect").value;
+      if (!k) return;
+      activeCompositeKey = k;
+      document.getElementById("planJobSelect").value = "";
+      
+      const parts = k.split(":::");
+      const remarksCard = document.getElementById("remarksCard");
+      const altLine = document.getElementById("altBomBadgeLine");
+      const remarksText = document.getElementById("remarksText");
+
+      altLine.innerHTML = `<span class="px-2 py-0.5 bg-blue-100 text-blue-900 font-bold rounded text-[11px] border border-blue-300">Selected Model: ${parts[0]} | Alt BOM: ${normalizeAltBom(parts[1])}</span>`;
+      remarksText.textContent = "Direct model selection from master catalog.";
+      remarksCard.classList.remove("hidden");
+
+      renderPartsTable();
+    }
+
+    function toggleStaged(code, desc) {
+      if (currentUser.role === "viewer") {
+        alert("Read-only access: Viewers cannot alter staging/kitting status.");
+        return;
+      }
+
+      if (!kittingState[activeCompositeKey]) {
+        kittingState[activeCompositeKey] = {};
+      }
+
+      const wasStaged = !!kittingState[activeCompositeKey][code];
+      const newStatus = !wasStaged;
+      kittingState[activeCompositeKey][code] = newStatus;
+      localStorage.setItem("BS_KITTING_STATE", JSON.stringify(kittingState));
+      
+      logAuditEvent(
+        code,
+        desc || "Component",
+        newStatus ? "Staged onto Trolley" : "Unstaged / Returned",
+        wasStaged ? "Staged" : "Pending",
+        newStatus ? "Staged" : "Pending",
+        newStatus ? "LOADED" : "UNLOADED"
+      );
+
+      renderPartsTable();
+    }
+
+    function renderPartsTable() {
+      const tbody = document.getElementById("partsTableBody");
+      tbody.innerHTML = "";
+
+      if (!activeCompositeKey || !masterBoms[activeCompositeKey]) {
+        tbody.innerHTML = `<tr><td colspan="12" class="p-8 text-center text-slate-400 font-medium">Please upload your BOM Excel in Step 1 and select a model to view components.</td></tr>`;
+        document.getElementById("tabCountAll").textContent = "0";
+        document.getElementById("tabCountAvailable").textContent = "0";
+        document.getElementById("tabCountShortage").textContent = "0";
+        document.getElementById("tabCountDiscrepancy").textContent = "0";
+        document.getElementById("kittingPercentText").textContent = "0%";
+        document.getElementById("kittingFractionText").textContent = "(0 / 0 Items Staged)";
+        document.getElementById("kittingProgressBar").style.width = "0%";
+        return;
+      }
+
+      const parts = masterBoms[activeCompositeKey] || [];
+      const keyParts = activeCompositeKey.split(":::");
+      const mName = keyParts[0];
+      const aName = normalizeAltBom(keyParts[1] || "1");
+
+      document.getElementById("activeModelTitle").innerHTML = `Showing components for: <strong class="text-blue-900">${mName}</strong> — <span class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-bold">Alt BOM No: ${aName}</span> (${parts.length} components)`;
+
+      const partSearchQuery = (document.getElementById("partSearchInput")?.value || "").trim().toLowerCase();
+
+      let countAll = parts.length;
+      let countAvailable = 0;
+      let countShortage = 0;
+      let countDiscrepancy = 0;
+      let stagedCount = 0;
+
+      const modelKitting = kittingState[activeCompositeKey] || {};
+
+      parts.forEach(p => {
+        const stock = stockInventory[p.code] || { system: 0, physical: 0 };
+        const reqQty = p.qty;
+        const sysQty = stock.system;
+        const physQty = stock.physical;
+
+        if (physQty < reqQty) countShortage++;
+        else if (sysQty > physQty && physQty === 0) countDiscrepancy++;
+        else countAvailable++;
+
+        if (modelKitting[p.code]) {
+          stagedCount++;
+        }
+      });
+
+      document.getElementById("tabCountAll").textContent = countAll;
+      document.getElementById("tabCountAvailable").textContent = countAvailable;
+      document.getElementById("tabCountShortage").textContent = countShortage;
+      document.getElementById("tabCountDiscrepancy").textContent = countDiscrepancy;
+
+      const kittingPercent = countAll > 0 ? Math.round((stagedCount / countAll) * 100) : 0;
+      const progressBar = document.getElementById("kittingProgressBar");
+      const percentText = document.getElementById("kittingPercentText");
+      const fractionText = document.getElementById("kittingFractionText");
+      const completeAlert = document.getElementById("kittingCompleteAlert");
+
+      progressBar.style.width = `${kittingPercent}%`;
+      percentText.textContent = `${kittingPercent}%`;
+      fractionText.textContent = `(${stagedCount} / ${countAll} Items Staged)`;
+
+      if (kittingPercent === 100 && countAll > 0) {
+        progressBar.className = "bg-emerald-500 h-full rounded-full transition-all duration-300 ease-out";
+        percentText.className = "text-sm font-extrabold font-mono-num text-emerald-600";
+        completeAlert.classList.remove("hidden");
+      } else {
+        progressBar.className = "bg-[#005A9C] h-full rounded-full transition-all duration-300 ease-out";
+        percentText.className = "text-sm font-extrabold font-mono-num text-[#005A9C]";
+        completeAlert.classList.add("hidden");
+      }
+
+      let visibleCount = 0;
+
+      parts.forEach(p => {
+        const stock = stockInventory[p.code] || { system: 0, physical: 0, updatedBy: 'None', updatedAt: '-' };
+        const reqQty = p.qty;
+        const sysQty = stock.system;
+        const physQty = stock.physical;
+        const isStaged = !!modelKitting[p.code];
+
+        let statusCategory = "AVAILABLE";
+        let statusBg = isStaged ? "bg-emerald-50/70" : "bg-white";
+        let statusBadge = "";
+
+        if (physQty < reqQty) {
+          statusCategory = "SHORTAGE";
+          if (!isStaged) statusBg = "pulse-shortage";
+          statusBadge = `<span class="px-2 py-0.5 bg-red-600 text-white font-bold rounded text-[10px] uppercase">Shortage / Starvation</span>`;
+        } else if (sysQty > physQty && physQty === 0) {
+          statusCategory = "DISCREPANCY";
+          if (!isStaged) statusBg = "bg-amber-50";
+          statusBadge = `<span class="px-2 py-0.5 bg-amber-400 text-amber-950 font-bold rounded text-[10px] uppercase">Discrepancy / Audit</span>`;
+        } else {
+          statusCategory = "AVAILABLE";
+          if (!isStaged) statusBg = "bg-emerald-50/30";
+          statusBadge = `<span class="px-2 py-0.5 bg-emerald-600 text-white font-bold rounded text-[10px] uppercase">Available</span>`;
+        }
+
+        if (activeFilter !== "ALL" && activeFilter !== statusCategory) return;
+
+        const pType = (p.proc || 'F').toUpperCase();
+        if (activeProcFilter !== "ALL" && activeProcFilter !== pType) return;
+
+        if (partSearchQuery) {
+          const matchCode = p.code.toLowerCase().includes(partSearchQuery);
+          const matchDesc = p.desc.toLowerCase().includes(partSearchQuery);
+          const matchGroup = (p.group || "").toLowerCase().includes(partSearchQuery);
+          const matchPlant = (p.plant || "").toLowerCase().includes(partSearchQuery);
+          if (!matchCode && !matchDesc && !matchGroup && !matchPlant) return;
+        }
+
+        visibleCount++;
+
+        let procBadgeHtml = "";
+        if (pType === "E") {
+          procBadgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">IN-HOUSE (E)</span>`;
+        } else {
+          procBadgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-300">VENDOR (F)</span>`;
+        }
+
+        let stagingCellHtml = "";
+        if (currentUser.role === "viewer") {
+          stagingCellHtml = isStaged 
+            ? `<span class="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full"><i data-lucide="check" class="w-3 h-3"></i> Staged</span>`
+            : `<span class="text-[10px] text-slate-400 font-medium">Pending</span>`;
+        } else {
+          stagingCellHtml = `
+            <label class="inline-flex items-center justify-center cursor-pointer p-1">
+              <input type="checkbox" ${isStaged ? 'checked' : ''} 
+                     onchange="toggleStaged('${p.code}', '${p.desc.replace(/'/g, "\\'")}')" 
+                     class="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500 cursor-pointer" />
+            </label>
+          `;
+        }
+
+        let physicalStockCellHtml = "";
+        if (currentUser.role === "viewer") {
+          physicalStockCellHtml = `
+            <div class="inline-block px-3 py-1 font-bold font-mono-num rounded ${physQty < reqQty ? 'bg-red-200 text-red-900' : 'bg-emerald-100 text-emerald-900'}">
+              ${physQty}
+            </div>
+          `;
+        } else {
+          physicalStockCellHtml = `
+            <input type="number" min="0" value="${physQty}" 
+                   onchange="updateFloorCount('${p.code}', this.value, '${p.desc.replace(/'/g, "\\'")}')" 
+                   class="w-20 px-2 py-1 text-center font-bold font-mono-num text-slate-900 bg-white border border-amber-300 rounded focus:ring-2 focus:ring-[#005A9C] focus:outline-none" />
+          `;
+        }
+
+        const tr = document.createElement("tr");
+        tr.className = `${statusBg} hover:bg-slate-100/70 transition border-b border-slate-200 ${isStaged ? 'font-medium' : ''}`;
+        tr.innerHTML = `
+          <td class="p-2.5 text-center bg-blue-50/30">${stagingCellHtml}</td>
+          <td class="p-2.5 font-mono text-slate-600">${p.plant || '1200'}</td>
+          <td class="p-2.5 font-mono font-bold text-blue-900">${normalizeAltBom(p.altBom)}</td>
+          <td class="p-2.5 font-bold font-mono text-slate-800 ${isStaged ? 'text-emerald-900' : ''}">${p.code}</td>
+          <td class="p-2.5 text-slate-800">${p.desc}</td>
+          <td class="p-2.5 text-center font-bold font-mono-num text-slate-800">${reqQty}</td>
+          <td class="p-2.5 text-center font-mono text-[10px] text-slate-500">${p.group || 'PARTS'}</td>
+          <td class="p-2.5 text-center">${procBadgeHtml}</td>
+          <td class="p-2.5 text-center font-mono-num bg-blue-50/40 font-semibold text-blue-900">${sysQty}</td>
+          <td class="p-2.5 text-center bg-amber-50/70">
+            ${physicalStockCellHtml}
+          </td>
+          <td class="p-2.5 text-center">${statusBadge}</td>
+          <td class="p-2.5 text-center text-[10px] text-slate-500">
+            <strong class="text-slate-800">${stock.updatedBy || 'admin'}</strong><br/>
+            <span>${stock.updatedAt || 'Initial'}</span>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      if (visibleCount === 0) {
+        tbody.innerHTML = `<tr><td colspan="12" class="p-6 text-center text-slate-400 font-medium">No materials match current search and filters.</td></tr>`;
+      }
+
+      lucide.createIcons();
+    }
+
+    function updateFloorCount(code, val, desc) {
+      if (currentUser.role === "viewer") return alert("Read-only access: Viewers cannot modify stock figures.");
+
+      const num = parseFloat(val) || 0;
+      const prev = stockInventory[code] ? stockInventory[code].physical : 0;
+
+      if (prev === num) return;
+
+      const diffVal = num - prev;
+      const diffFormatted = diffVal > 0 ? `+${diffVal}` : `${diffVal}`;
+
+      if (!stockInventory[code]) {
+        stockInventory[code] = { system: 0, physical: num, updatedBy: currentUser.id, updatedAt: new Date().toISOString().split('T')[0] };
+      } else {
+        stockInventory[code].physical = num;
+        stockInventory[code].updatedBy = currentUser.id;
+        stockInventory[code].updatedAt = new Date().toISOString().split('T')[0];
+      }
+
+      localStorage.setItem("BS_STOCK_INVENTORY", JSON.stringify(stockInventory));
+      logAuditEvent(code, desc || "Component", "Floor Count Adjusted", prev, num, diffFormatted);
+
+      renderPartsTable();
+    }
+
+    function exportFilteredCsv() {
+      if (!activeCompositeKey || !masterBoms[activeCompositeKey]) return alert("Please select a model first.");
+
+      const parts = masterBoms[activeCompositeKey] || [];
+      const keyParts = activeCompositeKey.split(":::");
+      const mName = keyParts[0];
+      const aName = normalizeAltBom(keyParts[1] || "1");
+      const partSearchQuery = (document.getElementById("partSearchInput")?.value || "").trim().toLowerCase();
+      const modelKitting = kittingState[activeCompositeKey] || {};
+
+      let rowsToExport = [];
+      parts.forEach(p => {
+        const stock = stockInventory[p.code] || { system: 0, physical: 0 };
+        const reqQty = p.qty;
+        const physQty = stock.physical;
+        let category = "AVAILABLE";
+
+        if (physQty < reqQty) category = "SHORTAGE";
+        else if (stock.system > physQty && physQty === 0) category = "DISCREPANCY";
+        else category = "AVAILABLE";
+
+        const pType = (p.proc || 'F').toUpperCase();
+        if ((activeFilter === "ALL" || activeFilter === category) &&
+            (activeProcFilter === "ALL" || activeProcFilter === pType)) {
+          
+          if (partSearchQuery) {
+            const matchCode = p.code.toLowerCase().includes(partSearchQuery);
+            const matchDesc = p.desc.toLowerCase().includes(partSearchQuery);
+            const matchGroup = (p.group || "").toLowerCase().includes(partSearchQuery);
+            if (!matchCode && !matchDesc && !matchGroup) return;
+          }
+
+          rowsToExport.push({ ...p, physQty, category, sysQty: stock.system, isStaged: !!modelKitting[p.code] });
+        }
+      });
+
+      if (rowsToExport.length === 0) return alert("No materials in current view to export!");
+
+      let csv = "data:text/csv;charset=utf-8,";
+      csv += "Staged (Y/N),Material,Plant,Alt Bom No.,BOM Component,Component Desc,Comp Qty(BUn),Material Group,Procurement Type,ERP Stock,Physical Stock,Status\n";
+
+      rowsToExport.forEach(r => {
+        csv += `"${r.isStaged ? 'YES' : 'NO'}","${mName}","${r.plant}","${normalizeAltBom(r.altBom)}","${r.code}","${r.desc.replace(/"/g, '""')}",${r.qty},"${r.group}","${r.proc}",${r.sysQty},${r.physQty},"${r.category}"\n`;
+      });
+
+      const encoded = encodeURI(csv);
+      const link = document.createElement("a");
+      link.setAttribute("href", encoded);
+      link.setAttribute("download", `${mName}_AltBOM_${aName}_Kitting_Report.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      initAuth();
+    });
+  </script>
+</body>
+</html>
